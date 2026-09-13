@@ -1,13 +1,15 @@
 """MCP protocol surface: handshake, tool registration, validation, job lifecycle.
 
-Every test here runs against the mock backend with local discovery disabled, so
-the suite is hermetic: no Antigravity IDE, no network, no API key. State is
-redirected to a temp directory so running tests never touches real job history.
+Every test drives the real request path with a stub executor in place of a live
+language server, so the suite is hermetic: no Antigravity IDE, no network, no
+API key. State is redirected to a temp directory so running tests never touches
+real job history.
 """
 
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,30 +22,57 @@ from antigravity_mcp.server import INVALID_PARAMS, METHOD_NOT_FOUND, MCPServer
 
 JOB_ID_PATTERN = re.compile(r"`(agy-[a-f0-9]+)`")
 
-HERMETIC_ENV = {
-    "ANTIGRAVITY_MOCK": "1",
-    "ANTIGRAVITY_DISABLE_LOCAL": "1",
-}
+HERMETIC_ENV = {"ANTIGRAVITY_DISABLE_LOCAL": "1"}
+
+
+class StubExecutor:
+    """Stands in for a language server: completes every job immediately.
+
+    Keeping the fake here rather than in the package is the point — a server
+    that ships its own fake-result backend can return invented output in
+    production if a flag is ever set by accident.
+    """
+
+    def __init__(self, result: str = "stub result") -> None:
+        self.result = result
+        self.calls: list = []
+
+    def run_job_sync(self, job, context_files=None, system_instruction=None) -> None:
+        self.calls.append((job.task, list(context_files or []), system_instruction))
+        job.started_at = time.time()
+        job.status = "running"
+        job.log("Started on stub executor.")
+        if job.is_cancelled():
+            return
+        job.result = f"{self.result} for: {job.task[:40]}"
+        job.status = "completed"
+        job.finished_at = time.time()
+        job.log("Completed on stub executor.")
 
 
 class HermeticServerTest(unittest.TestCase):
-    """Base class giving each test a throwaway state dir and the mock backend."""
+    """Base class giving each test a throwaway state dir and a stub executor."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._saved = {k: os.environ.get(k) for k in (*HERMETIC_ENV, "ANTIGRAVITY_STATE_DIR")}
         os.environ.update(HERMETIC_ENV)
         os.environ["ANTIGRAVITY_STATE_DIR"] = self._tmp.name
-        self.server = MCPServer()
+        self.executor = StubExecutor()
+        self.server = MCPServer(executor=self.executor)
 
     def tearDown(self):
-        self.server.shutdown()
+        # Wait for job threads before the state directory goes away: one still
+        # running would keep writing jobs.json into a directory being deleted.
+        self.server.shutdown(wait_for_jobs=True)
         for key, value in self._saved.items():
             if value is None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
-        self._tmp.cleanup()
+        # Best-effort: a stray temp file must never turn into a test failure
+        # that says nothing about the behaviour under test.
+        shutil.rmtree(self._tmp.name, ignore_errors=True)
 
     def call(self, name, arguments=None, req_id=1):
         return self.server.handle_request(
@@ -246,6 +275,7 @@ class TestJobLifecycle(HermeticServerTest):
                 )
             )
             self.assertIn("Code search results", text)
+            self.assertEqual(self.executor.calls[-1][1], [path])
         finally:
             os.unlink(path)
 

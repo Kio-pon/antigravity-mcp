@@ -53,9 +53,11 @@ First public release.
 - MCP server exposing six tools: `dispatch_gemini_agent`, `check_agent_job`,
   `list_active_jobs`, `cancel_agent_job`, `gemini_code_search`, and
   `list_available_models`.
-- Three-tier backend dispatch — local Antigravity language server, Gemini REST
-  API, opt-in mock — with an explicit failure when none is reachable, so a job
-  never returns fabricated output.
+- Two-tier backend dispatch — local Antigravity language server, then the
+  Gemini REST API — with an explicit failure when neither is reachable. There is
+  no fallback that returns a stand-in result: a plausible answer no model
+  produced is worse than an error, because nothing downstream can tell the two
+  apart.
 - Cross-platform language server discovery: `/proc` and `ss` on Linux, `lsof`
   and `ps -axww` on macOS, `netstat` and WMI on Windows, each with fallbacks.
 - Token-based model resolution against the live catalog: a request must match a

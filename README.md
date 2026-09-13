@@ -27,11 +27,12 @@ Your orchestrator stays the architect. The subagents do the legwork.
         ┌─────────────────┼─────────────────┐
         ▼                 ▼                 ▼
   ┌───────────────┐ ┌─────────────┐ ┌───────────────┐
-  │ Antigravity   │ │ Gemini REST │ │ Mock          │
-  │ language      │ │ API         │ │ (opt-in, for  │
-  │ server        │ │             │ │  protocol     │
-  │ no API key    │ │ needs a key │ │  testing)     │
-  └───────────────┘ └─────────────┘ └───────────────┘
+  │ Antigravity   │ │ Gemini REST │ │ Explicit      │
+  │ language      │ │ API         │ │ failure       │
+  │ server        │ │             │ │ (never an     │
+  │ no API key    │ │ needs a key │ │  invented     │
+  └───────────────┘ └─────────────┘ │  result)      │
+                                    └───────────────┘
 ```
 
 ## Why
@@ -141,8 +142,11 @@ Tried in strict order, with an explicit failure at the end rather than a silent 
 
 1. **Local Antigravity language server** — the default. Connects over loopback HTTPS and reuses the IDE's signed-in session. No API key.
 2. **Gemini REST API** — used when the IDE is not running and `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set.
-3. **Mock** — only when `ANTIGRAVITY_MOCK=1` is explicitly set. For protocol testing and CI.
-4. **Loud failure** — no backend means the job fails with an error saying so. It will never fabricate output.
+3. **Loud failure** — no backend means the job fails with an error saying so.
+
+There is deliberately no third tier that returns a stand-in result. A plausible
+answer no model actually produced is worse than an error, because nothing
+downstream can tell the two apart.
 
 ## Configuration
 
@@ -155,7 +159,6 @@ All optional.
 | `ANTIGRAVITY_MAX_CONCURRENT_REQUESTS` | `16` | Tool calls handled in parallel. |
 | `ANTIGRAVITY_STATE_DIR` | platform state dir | Where job history is kept. |
 | `ANTIGRAVITY_DISABLE_LOCAL` | unset | Skip the local backend entirely. |
-| `ANTIGRAVITY_MOCK` | unset | Enable the mock backend. |
 | `ANTIGRAVITY_LOG_LEVEL` | `INFO` | Server log level on stderr. |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | unset | Enables the REST fallback. |
 
@@ -206,7 +209,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The default suite is hermetic: no IDE, no network, no API key. To also run the live round-trip against a real language server, open the IDE and set `ANTIGRAVITY_LIVE_TESTS=1`.
+The default suite is hermetic — no IDE, no network, no API key — driving the real request path with a stub executor in place of a language server. To also run the live round-trip against a real one, open the IDE and set `ANTIGRAVITY_LIVE_TESTS=1`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

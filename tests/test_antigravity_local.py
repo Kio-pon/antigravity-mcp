@@ -168,10 +168,12 @@ class TestExecutorDispatchOrder(unittest.TestCase):
     """Tests priority dispatch and loud failure when no backend exists."""
 
     def test_no_backend_fails_loudly(self):
-        # Ensure no mock mode, no api key, and no local server discoverable
-        with patch.dict(
-            os.environ, {"ANTIGRAVITY_MOCK": "0", "ANTIGRAVITY_DISABLE_LOCAL": "1"}, clear=True
-        ):
+        """With no language server and no API key, the job fails and says why.
+
+        There is deliberately no fallback that invents a result: a plausible
+        answer that no model produced is worse than an error, because nothing
+        downstream can tell the two apart."""
+        with patch.dict(os.environ, {"ANTIGRAVITY_DISABLE_LOCAL": "1"}, clear=True):
             executor = AgentExecutor(api_key=None)
             job = Job(
                 id="agy-fail", task="task requiring backend", model="gemini-flash", status="pending"
@@ -181,17 +183,6 @@ class TestExecutorDispatchOrder(unittest.TestCase):
             self.assertEqual(job.status, "failed")
             self.assertIn("No execution backend available", job.error)
             self.assertIsNone(job.result)
-
-    def test_mock_backend_when_explicitly_enabled(self):
-        with patch.dict(
-            os.environ, {"ANTIGRAVITY_MOCK": "1", "ANTIGRAVITY_DISABLE_LOCAL": "1"}, clear=True
-        ):
-            executor = AgentExecutor(api_key=None)
-            job = Job(id="agy-mock", task="mock task", model="gemini-flash", status="pending")
-            executor.run_job_sync(job)
-
-            self.assertEqual(job.status, "completed")
-            self.assertIn("Mock subagent response", job.result)
 
 
 @unittest.skipUnless(
@@ -217,7 +208,7 @@ class TestAntigravityLocalIntegration(unittest.TestCase):
             self.skipTest("No local Antigravity language server currently running.")
 
         # Explicitly ensure no Gemini API key is present
-        with patch.dict(os.environ, {"ANTIGRAVITY_MOCK": "0"}, clear=False):
+        with patch.dict(os.environ, {}, clear=False):
             if "GEMINI_API_KEY" in os.environ:
                 del os.environ["GEMINI_API_KEY"]
             if "GOOGLE_API_KEY" in os.environ:

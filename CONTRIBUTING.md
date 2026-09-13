@@ -13,7 +13,9 @@ pytest
 
 The default suite is hermetic — no Antigravity IDE, no network, no API key —
 and it needs to stay that way, because CI runs on three operating systems where
-none of those exist. Anything requiring a real language server belongs behind
+none of those exist. Tests that need a backend inject a stub executor into
+`MCPServer`; the package itself must never grow a fake-result path, since one
+flag set by accident would then let it return invented output in production. Anything requiring a real language server belongs behind
 the `ANTIGRAVITY_LIVE_TESTS=1` opt-in, alongside the existing round-trip test.
 
 Before pushing:

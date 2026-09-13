@@ -192,9 +192,13 @@ class ToolInputError(ValueError):
 
 
 class MCPServer:
-    def __init__(self) -> None:
+    def __init__(self, executor: Optional[AgentExecutor] = None) -> None:
         self.job_manager = JobManager()
-        self.executor = AgentExecutor()
+        # Injectable so tests can drive the full request path against a stub
+        # instead of a live language server. The server previously shipped a
+        # mock backend to make that possible, which meant production code
+        # carried a fake-result path purely for the benefit of the test suite.
+        self.executor = executor or AgentExecutor()
         self._job_pool = ThreadPoolExecutor(
             max_workers=MAX_CONCURRENT_JOBS, thread_name_prefix="antigravity-job"
         )
@@ -479,17 +483,25 @@ class MCPServer:
         finally:
             self.shutdown()
 
-    def shutdown(self) -> None:
+    def shutdown(self, wait_for_jobs: bool = False) -> None:
         """Drain in-flight requests, then stop accepting new work.
 
         In-flight requests are allowed to finish so their responses (and, more
-        importantly, their persisted job state) are not lost mid-write. Running
-        agent jobs are not waited on — they are already recorded on disk and
-        get marked failed on the next load, which is what a killed session is.
+        importantly, their persisted job state) are not lost mid-write.
+
+        Running agent jobs are not waited on by default: they are already
+        recorded on disk and get marked failed on the next load, which is
+        exactly what a killed session is, and a client closing the pipe should
+        not block for however long a model takes.
+
+        `wait_for_jobs` makes shutdown fully quiescent instead. Callers that
+        tear down the state directory afterwards need it — a job thread still
+        running will keep writing `jobs.json` into a directory being deleted
+        underneath it, which surfaces as a "directory not empty" race.
         """
         logger.info("Shutting down.")
         self._request_pool.shutdown(wait=True, cancel_futures=False)
-        self._job_pool.shutdown(wait=False, cancel_futures=True)
+        self._job_pool.shutdown(wait=wait_for_jobs, cancel_futures=not wait_for_jobs)
 
 
 def main() -> None:

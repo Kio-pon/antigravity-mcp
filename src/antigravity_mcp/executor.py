@@ -3,9 +3,8 @@ Unified Executor engine for running Antigravity & Gemini Flash worker agents.
 Supports priority dispatch:
 1. Local Antigravity IDE language server (active authenticated session, no API key).
 2. Google Gemini REST API (requires GEMINI_API_KEY or GOOGLE_API_KEY).
-3. Mock simulation (ONLY when ANTIGRAVITY_MOCK=1 is explicitly set).
-
-If no backend is available, the job fails loudly with an explicit error.
+If neither is available, the job fails loudly with an explicit error rather
+than inventing a result.
 """
 
 import json
@@ -39,7 +38,7 @@ DEFAULT_JOB_TIMEOUT = float(os.environ.get("ANTIGRAVITY_JOB_TIMEOUT", "1800"))
 class AgentExecutor:
     """
     Unified executor dispatching agent jobs in priority order:
-    Local Antigravity -> Gemini REST -> Mock (explicit only).
+    local Antigravity language server, then the Gemini REST API.
     """
 
     def __init__(self, api_key: Optional[str] = None, timeout: Optional[float] = None):
@@ -71,43 +70,16 @@ class AgentExecutor:
             )
             return
 
-        # Priority 3: Mock simulation (ONLY if ANTIGRAVITY_MOCK=1 is set)
-        if os.environ.get("ANTIGRAVITY_MOCK", "").lower() in ("1", "true"):
-            self._run_mock(job, context_files=context_files)
-            return
-
-        # No backend available -> Fail loudly
+        # No backend available -> fail loudly
         job.started_at = time.time()
         job.status = "failed"
         job.finished_at = time.time()
         job.error = (
             "No execution backend available. "
             "Ensure the Antigravity IDE is running (with its language server active), "
-            "set GEMINI_API_KEY in the environment for cloud execution, "
-            "or set ANTIGRAVITY_MOCK=1 for protocol-only testing."
+            "or set GEMINI_API_KEY in the environment for cloud execution."
         )
         job.log("Execution failed: No available backend.")
-
-    def _run_mock(self, job: Job, context_files: Optional[list[str]] = None) -> None:
-        job.started_at = time.time()
-        job.status = "running"
-        job.log(f"Started job in mock mode on model {job.model}")
-        time.sleep(0.5)
-        if job.is_cancelled():
-            return
-        job.result = (
-            f"### [Mock subagent response]\n"
-            f"**Job ID**: `{job.id}`\n"
-            f"**Model**: `{job.model}`\n"
-            f"**Task**: {job.task}\n\n"
-            f"**Execution Summary**:\n"
-            f"- Successfully processed requested prompt and {len(context_files or [])} context files.\n"
-            f"- Analysis complete: no critical bugs detected.\n\n"
-            f'```json\n{{"status": "success", "job_id": "{job.id}"}}\n```'
-        )
-        job.status = "completed"
-        job.finished_at = time.time()
-        job.log("Job completed successfully in mock mode.")
 
     def _run_gemini_rest(
         self,
