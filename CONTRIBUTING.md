@@ -52,10 +52,22 @@ Two rules keep this code trustworthy:
 
 ## Touching the local backend
 
-`antigravity_local.py` talks to private, undocumented IDE endpoints. Two places
-have subtle behaviour that looks removable and is not — the completion-detection
-loop and the CSRF token regex. Both carry comments explaining the bug that
-produced them. Please read those before simplifying either.
+`antigravity_local.py` talks to private, undocumented IDE endpoints. Three
+places have subtle behaviour that looks removable and is not:
+
+- **The completion-detection loop.** It waits for the step list to settle rather
+  than trusting the first planner response, because an empty planner response is
+  emitted before the first tool call.
+- **The set of terminal tail step types.** A finished run may end in either a
+  planner response or a `CHECKPOINT`; accepting only the former made every
+  direct, tool-free answer hang until the job timeout.
+- **The CSRF token regex.** Its negative lookbehind is the whole point: matching
+  `--extension_server_csrf_token` connects to a different service that answers
+  RPC calls with 404.
+
+Each carries a comment describing the bug that produced it, and each has a
+regression test built from a real captured trajectory. Please read both before
+simplifying any of them.
 
 ## Pull requests
 

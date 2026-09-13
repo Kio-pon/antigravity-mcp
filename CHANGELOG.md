@@ -6,79 +6,78 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.1.0] — 2026-09-13
 
-Support for the current MCP specification, **2026-07-28**, alongside the
-handshake-based revisions this server already spoke.
-
-### Added
-- **MCP 2026-07-28 support.** The server is now "dual-era": it serves modern
-  clients, which declare their protocol version and capabilities in each
-  request's `_meta` and never shake hands, and legacy clients, which open with
-  `initialize`. Which era a request belongs to is read off the request itself,
-  so a single process serves both with no configuration.
-- **`server/discover`**, which the specification makes mandatory. On stdio it is
-  also the client's era probe: answering it is what identifies this server as
-  modern. It returns every version this server speaks — the legacy ones
-  included — so a client that cannot speak 2026-07-28 can read a version it does
-  support straight out of the response instead of probing for one.
-- `resultType: "complete"` and `_meta['io.modelcontextprotocol/serverInfo']` on
-  every result. Legacy clients ignore both, since earlier revisions instruct
-  clients to treat an absent `resultType` as complete.
-- `ttlMs` and `cacheScope` on `tools/list`, letting clients cache the catalog.
-  The catalog is a constant that changes only when the server binary does, so
-  the advertised hour-long TTL is honest rather than optimistic.
-
-### Changed
-- A request declaring an unsupported protocol version now returns
-  `UnsupportedProtocolVersionError` (`-32022`) listing the versions this server
-  does support, instead of silently downgrading. Silent downgrade left the
-  client believing it had negotiated something it had not.
-- A modern request missing its required `protocolVersion` or `clientCapabilities`
-  metadata is rejected with `-32602`, as the specification requires.
-- `initialize` never echoes a modern protocol version. A client using the
-  handshake has already demonstrated it is not speaking the per-request
-  protocol, so promising it one would be a lie it could not act on.
-
-### Notes
-- `ping` was removed in 2026-07-28 but is still answered here, because legacy
-  clients continue to send it.
-- Nothing in this server uses the features deprecated by 2026-07-28 — Roots,
-  Sampling, Logging, Dynamic Client Registration, or the HTTP+SSE transport — so
-  there is nothing to migrate off.
-
-## [1.0.0] — 2026-09-13
-
 First public release.
 
-### Added
+### Tools and execution
 - MCP server exposing six tools: `dispatch_gemini_agent`, `check_agent_job`,
   `list_active_jobs`, `cancel_agent_job`, `gemini_code_search`, and
   `list_available_models`.
-- Two-tier backend dispatch — local Antigravity language server, then the
-  Gemini REST API — with an explicit failure when neither is reachable. There is
-  no fallback that returns a stand-in result: a plausible answer no model
-  produced is worse than an error, because nothing downstream can tell the two
-  apart.
-- Cross-platform language server discovery: `/proc` and `ss` on Linux, `lsof`
-  and `ps -axww` on macOS, `netstat` and WMI on Windows, each with fallbacks.
-- Token-based model resolution against the live catalog: a request must match a
-  model's version, family, and effort tier together, and unspecified dimensions
-  resolve to the highest effort and newest version available.
-- Job history persisted to the per-user state directory, surviving across
-  client sessions.
-- `pip`-installable package with an `antigravity-mcp` console script, zero
-  runtime dependencies, and CI across Linux, macOS, and Windows on Python
-  3.9–3.13.
-- Optional Claude Code skill describing when delegation is worthwhile.
+- Two backends, tried in order: the local Antigravity language server, then the
+  Gemini REST API. If neither is reachable the job fails with an explicit error.
+  There is deliberately no further tier that returns a stand-in result — a
+  plausible answer no model produced is worse than an error, because nothing
+  downstream can tell the two apart.
+- Tool calls are handled on a thread pool rather than inline on the stdio read
+  loop, so a long `gemini_code_search` cannot block the `check_agent_job` polls
+  used to watch other jobs.
+- Job history persists to the per-user state directory, surviving across client
+  sessions. A job still in flight when the process died loads back as failed,
+  since it can never now finish.
 
-### Fixed
-- Tool calls are handled on a thread pool instead of inline on the stdio read
-  loop. A long `gemini_code_search` previously blocked every other tool call
-  behind it, including the `check_agent_job` polls needed to watch other jobs.
+### Protocol
+- Implements the current **2026-07-28** specification alongside the older
+  handshake-based revisions. The server is dual-era: modern clients declare
+  their protocol version and capabilities in each request's `_meta` and never
+  shake hands, legacy clients open with `initialize`, and the era is read off
+  each request, so one process serves both with no configuration.
+- `server/discover`, which the specification makes mandatory. On stdio it is
+  also the client's era probe — answering it is what identifies this server as
+  modern. It advertises the legacy versions too, so a client that cannot speak
+  2026-07-28 can read a usable version straight out of the response.
+- `resultType` and `_meta['io.modelcontextprotocol/serverInfo']` on every
+  result; `ttlMs` and `cacheScope` on `tools/list` for client-side caching.
+- An unsupported protocol version returns `UnsupportedProtocolVersionError`
+  (`-32022`) naming the versions actually supported, rather than silently
+  downgrading and leaving the client believing it negotiated something it had
+  not. Missing required request metadata returns `-32602`.
+- `ping` was removed in 2026-07-28 but is still answered, because legacy clients
+  continue to send it.
+
+### Model selection
+- Model resolution runs against the live catalog rather than a hardcoded list.
+  A request must match a model's version, family, and effort tier together, so
+  `gemini-3.5-flash` never quietly resolves to a 3.7 model; unspecified
+  dimensions resolve to the highest effort tier and newest version available.
+
+### Discovery
+- Cross-platform language server discovery: `/proc` and `ss` on Linux, `lsof`
+  and `ps -axww` on macOS, `netstat` and WMI on Windows, each falling through to
+  the others so unusual environments still work. Every strategy degrades to an
+  empty result instead of raising.
+- Only Linux is verified on real hardware, against Antigravity IDE v1.107.0.
+
+### Packaging
+- `pip`-installable with an `antigravity-mcp` console script, zero runtime
+  dependencies, and CI across Linux, macOS, and Windows on Python 3.9 to 3.13.
+- Optional skill describing when delegation is worthwhile.
+
+### Fixed during development
+- **Finished runs were polled until the job timeout.** An agent that answers
+  directly, without calling tools, produces a trajectory ending in a
+  `CHECKPOINT` after its final planner response. Completion required the last
+  step to be a `PLANNER_RESPONSE`, so that shape never matched: the run was
+  already over, the answer was sitting in the trajectory, and the bridge kept
+  polling until it timed out and discarded the result. Observed on three real
+  runs that produced complete answers of 7181, 9326, and 15822 characters and
+  returned none of them. Runs ending on a planner response were unaffected,
+  which made the failure look size-dependent when the opposite was true — the
+  short direct answer is the shape that broke.
 - `check_agent_job` reported negative elapsed time for running jobs, having
   measured against `created_at` rather than the current time.
-- Job state is written to the per-user state directory rather than into the
-  package directory, which breaks under a read-only or shared install.
-- Unknown tools and malformed arguments now return JSON-RPC error codes instead
-  of tool results the model would try to reason about.
-- Broken-pipe and malformed-input handling on stdio no longer risks a crash on
-  client disconnect.
+- Job state moved out of the package directory into the per-user state
+  directory, which a read-only or shared install would otherwise break.
+- Unknown tools and malformed arguments return JSON-RPC error codes instead of
+  tool results a model would try to reason about.
+- `shutdown()` gained `wait_for_jobs` for callers that tear down the state
+  directory afterwards; without it a job thread could still be writing
+  `jobs.json` into a directory being deleted.

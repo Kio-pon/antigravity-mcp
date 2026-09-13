@@ -26,13 +26,12 @@ Your orchestrator stays the architect. The subagents do the legwork.
                           │  tried in order
         ┌─────────────────┼─────────────────┐
         ▼                 ▼                 ▼
-  ┌───────────────┐ ┌─────────────┐ ┌───────────────┐
-  │ Antigravity   │ │ Gemini REST │ │ Explicit      │
-  │ language      │ │ API         │ │ failure       │
-  │ server        │ │             │ │ (never an     │
-  │ no API key    │ │ needs a key │ │  invented     │
-  └───────────────┘ └─────────────┘ │  result)      │
-                                    └───────────────┘
+  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+  │ Antigravity   │ │ Gemini REST   │ │ Explicit      │
+  │ language      │ │ API           │ │ failure       │
+  │ server        │ │               │ │               │
+  │ no API key    │ │ needs a key   │ │ never faked   │
+  └───────────────┘ └───────────────┘ └───────────────┘
 ```
 
 ## Why
@@ -138,15 +137,15 @@ Step 4 is the point of the whole design. A subagent's output is a proposal, not 
 
 ## Execution backends
 
-Tried in strict order, with an explicit failure at the end rather than a silent fallback to fiction:
+Two backends, tried in order:
 
 1. **Local Antigravity language server** — the default. Connects over loopback HTTPS and reuses the IDE's signed-in session. No API key.
 2. **Gemini REST API** — used when the IDE is not running and `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set.
-3. **Loud failure** — no backend means the job fails with an error saying so.
 
-There is deliberately no third tier that returns a stand-in result. A plausible
-answer no model actually produced is worse than an error, because nothing
-downstream can tell the two apart.
+If neither is reachable the job fails with an error saying so. There is
+deliberately no further tier that returns a stand-in result: a plausible answer
+no model actually produced is worse than an error, because nothing downstream
+can tell the two apart.
 
 ## Configuration
 
@@ -155,7 +154,7 @@ All optional.
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
 | `ANTIGRAVITY_MAX_CONCURRENT_JOBS` | `3` | Jobs running at once. Every job drives a live session on the *same* language server process, so this is a real resource ceiling, not a formality. Extra jobs queue. |
-| `ANTIGRAVITY_JOB_TIMEOUT` | `1800` | Seconds before a job is abandoned. Finishing early is detected, not waited out, so a generous ceiling costs nothing. |
+| `ANTIGRAVITY_JOB_TIMEOUT` | `1800` | Seconds before a job is abandoned. Completion is detected, not waited out — a short single-shot answer returns in seconds — so a generous ceiling only bounds a genuinely stuck agent. |
 | `ANTIGRAVITY_MAX_CONCURRENT_REQUESTS` | `16` | Tool calls handled in parallel. |
 | `ANTIGRAVITY_STATE_DIR` | platform state dir | Where job history is kept. |
 | `ANTIGRAVITY_DISABLE_LOCAL` | unset | Skip the local backend entirely. |
