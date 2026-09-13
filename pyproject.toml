@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "antigravity-mcp"
+dynamic = ["version"]
+description = "MCP server that lets any MCP client dispatch background subagent jobs to the Antigravity IDE's local agent engine."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "Kio-pon" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "antigravity",
+    "gemini",
+    "claude-code",
+    "codex",
+    "agent",
+    "subagent",
+    "orchestration",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# The bridge speaks MCP over stdio and talks to the language server with
+# urllib, so it runs on a bare interpreter with nothing installed. That is
+# deliberate: an MCP server that needs a populated virtualenv is one more thing
+# to go wrong between the client's `command` and a working tool call.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.5"]
+
+[project.urls]
+Homepage = "https://github.com/Kio-pon/antigravity-mcp"
+Repository = "https://github.com/Kio-pon/antigravity-mcp"
+Issues = "https://github.com/Kio-pon/antigravity-mcp/issues"
+Changelog = "https://github.com/Kio-pon/antigravity-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+antigravity-mcp = "antigravity_mcp.server:main"
+
+[tool.hatch.version]
+path = "src/antigravity_mcp/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/antigravity_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
